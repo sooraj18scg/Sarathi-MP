@@ -1,80 +1,46 @@
 #include <SPI.h>
 #include <LoRa.h>
-#include <TensorFlowLite.h>
 
-const int trigPin = D1; // Ultrasonic sensor trig pin
-const int echoPin = D2; // Ultrasonic sensor echo pin
-const int ledPin = D3;  // LED pin for dashboard lights
+#define TRIG_PIN 9
+#define ECHO_PIN 10
+#define THRESHOLD 100  // Distance in cm
 
-TfLiteModel* model; // TensorFlow Lite model
-TfLiteInterpreter* interpreter; // TensorFlow Lite interpreter
+int ttl = 3;
 
 void setup() {
   Serial.begin(9600);
-  pinMode(trigPin, OUTPUT);
-  pinMode(echoPin, INPUT);
-  pinMode(ledPin, OUTPUT);
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
 
-  // Load the TensorFlow Lite model
-  model = tflite::GetModel("model.tflite");
-  if (model == nullptr) {
-    Serial.println("Error loading TensorFlow Lite model");
-    while (1);
-  }
-
-  // Create an interpreter to run the model
-  interpreter = new TfLiteInterpreter(model);
-  if (interpreter->AllocateTensors() != kTfLiteOk) {
-    Serial.println("Error allocating tensors");
-    while (1);
-  }
-
-  // Initialize LoRa module
   if (!LoRa.begin(433E6)) {
-    Serial.println("LoRa initialization failed. Check your connections.");
+    Serial.println("LoRa init failed");
     while (1);
   }
+  Serial.println("LoRa Transmitter Ready");
 }
 
 void loop() {
-  long duration, distance;
-  digitalWrite(trigPin, LOW);
+  // Measure distance
+  digitalWrite(TRIG_PIN, LOW);
   delayMicroseconds(2);
-  digitalWrite(trigPin, HIGH);
+  digitalWrite(TRIG_PIN, HIGH);
   delayMicroseconds(10);
-  digitalWrite(trigPin, LOW);
-  duration = pulseIn(echoPin, HIGH);
-  distance = duration * 0.034 / 2;
+  digitalWrite(TRIG_PIN, LOW);
 
-  float threshold = predictThreshold(distance);
-  
-  if (distance < threshold) {
-    digitalWrite(ledPin, HIGH);
-    sendMessage(distance); // Transmit distance to nearby receiver modules
-  } else {
-    digitalWrite(ledPin, LOW);
+  long duration = pulseIn(ECHO_PIN, HIGH);
+  int distance = duration * 0.034 / 2;
+
+  Serial.print("Distance: ");
+  Serial.println(distance);
+
+  if (distance < THRESHOLD) {
+    LoRa.beginPacket();
+    LoRa.print("ALERT:");
+    LoRa.print(ttl);
+    LoRa.endPacket();
+    Serial.println("Alert sent");
+    delay(2000);  // Avoid spamming
   }
 
-  delay(1000); // Delay for stability
-}
-
-float predictThreshold(float distance) {
-  // Run the TensorFlow Lite model to predict the threshold
-  TfLiteTensor* input = interpreter->input(0);
-  input->data.f[0] = distance;
-
-  if (interpreter->Invoke() != kTfLiteOk) {
-    Serial.println("Error running TensorFlow Lite model");
-    while (1);
-  }
-
-  TfLiteTensor* output = interpreter->output(0);
-  return output->data.f[0];
-}
-
-void sendMessage(long distance) {
-  LoRa.beginPacket();
-  LoRa.print("Distance: ");
-  LoRa.print(distance);
-  LoRa.endPacket();
+  delay(1000);
 }
