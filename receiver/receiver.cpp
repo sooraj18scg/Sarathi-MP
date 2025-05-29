@@ -1,76 +1,45 @@
 #include <SPI.h>
 #include <LoRa.h>
 
-// Define the LoRa module pins
-#define LORA_SCK 5
-#define LORA_CS 18
-#define LORA_MISO 19
-#define LORA_MOSI 27
-#define LORA_RST 14
-#define LORA_IRQ 26
-
-// Define the node's address
-#define NODE_ADDRESS 1
-
-// Define the number of nodes behind this node
-#define NUM_BEHIND_NODES 50
+#define BUZZER_PIN 8
 
 void setup() {
   Serial.begin(9600);
+  pinMode(BUZZER_PIN, OUTPUT);
+  digitalWrite(BUZZER_PIN, LOW);
 
-  // Initialize LoRa module
-  LoRa.setPins(LORA_CS, LORA_RST, LORA_IRQ);
   if (!LoRa.begin(433E6)) {
-    Serial.println("LoRa initialization failed. Check your connections.");
+    Serial.println("LoRa init failed");
     while (1);
   }
+  Serial.println("LoRa Receiver Ready");
 }
 
 void loop() {
-  if (LoRa.parsePacket()) {
-    Message message = receiveMessage();
-    processMessage(message);
+  int packetSize = LoRa.parsePacket();
+  if (packetSize) {
+    String incoming = "";
+    while (LoRa.available()) {
+      incoming += (char)LoRa.read();
+    }
+    Serial.print("Received: ");
+    Serial.println(incoming);
+
+    if (incoming.startsWith("ALERT:")) {
+      int ttl = incoming.substring(6).toInt();
+      if (ttl > 0) {
+        digitalWrite(BUZZER_PIN, HIGH);
+        delay(2000);
+        digitalWrite(BUZZER_PIN, LOW);
+
+        // Relay alert
+        ttl -= 1;
+        LoRa.beginPacket();
+        LoRa.print("ALERT:");
+        LoRa.print(ttl);
+        LoRa.endPacket();
+        Serial.println("Alert relayed");
+      }
+    }
   }
-}
-
-struct Message {
-  int senderAddress;
-  int receiverAddress;
-  String content;
-};
-
-Message receiveMessage() {
-  String messageString = "";
-  while (LoRa.available()) {
-    messageString += (char)LoRa.read();
-  }
-  // Parse message string into Message struct
-  Message message;
-  message.senderAddress = ...; // Extract sender address from messageString
-  message.receiverAddress = ...; // Extract receiver address from messageString
-  message.content = ...; // Extract message content from messageString
-  return message;
-}
-
-void processMessage(Message message) {
-  if (message.receiverAddress == NODE_ADDRESS) {
-    // Message is for this node
-    triggerWarning();
-    forwardMessage(message);
-  }
-}
-
-void triggerWarning() {
- 
-
-}
-
-void forwardMessage(Message message) {
-  // Forward message to the next node in the bus
-  int nextNode = (NODE_ADDRESS % NUM_BEHIND_NODES) + 1; // Assuming nodes are numbered sequentially
-  sendMessage(nextNode, message);
-}
-
-void sendMessage(int nextNode, Message message) {
-  
 }
